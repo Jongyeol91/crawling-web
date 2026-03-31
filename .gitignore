@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+storage-state.json
+.alert-dedup-state.json
+*.log
+logs/
+.scraper.lock

@@ -1,0 +1,27 @@
+{
+  "name": "songpa-tennis-scraper",
+  "version": "1.0.0",
+  "description": "Tennis court availability scraper for spc.esongpa.or.kr with Slack notifications",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/index.ts",
+    "scrape": "tsx src/scraper.ts",
+    "test:slack": "tsx src/test-slack.ts",
+    "login": "tsx src/login.ts",
+    "test:filter": "tsx src/slot-filter.test.ts",
+    "test:dedup": "tsx src/alert-dedup.test.ts"
+  },
+  "keywords": ["tennis", "scraper", "playwright", "slack"],
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.52.0",
+    "@slack/webhook": "^7.0.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}
