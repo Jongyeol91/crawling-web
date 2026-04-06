@@ -9,19 +9,28 @@
     "scrape": "tsx src/scraper.ts",
     "test:slack": "tsx src/test-slack.ts",
     "login": "tsx src/login.ts",
+    "bot": "tsx src/slack-bot.ts",
     "test:filter": "tsx src/slot-filter.test.ts",
     "test:dedup": "tsx src/alert-dedup.test.ts"
   },
-  "keywords": ["tennis", "scraper", "playwright", "slack"],
+  "keywords": [
+    "tennis",
+    "scraper",
+    "playwright",
+    "slack"
+  ],
   "license": "MIT",
   "dependencies": {
-    "playwright": "^1.52.0",
+    "@slack/bolt": "^4.6.0",
     "@slack/webhook": "^7.0.0",
-    "dotenv": "^16.4.0"
+    "dotenv": "^16.4.0",
+    "node-cron": "^4.2.1",
+    "playwright": "^1.52.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.11",
     "tsx": "^4.19.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.7.0"
   }
 }

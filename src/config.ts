@@ -24,8 +24,8 @@ export const STORAGE_STATE_PATH = path.resolve(
 /** Polling interval in milliseconds (5 minutes) */
 export const POLL_INTERVAL_MS = 5 * 60 * 1000;
 
-/** Minimum evening hour for weekday filtering (18:00+) */
-export const WEEKDAY_MIN_HOUR = 18;
+/** Minimum evening hour for weekday filtering (17:00+) */
+export const WEEKDAY_MIN_HOUR = 17;
 
 /** Credentials from environment */
 export const CREDENTIALS = {
@@ -33,8 +33,20 @@ export const CREDENTIALS = {
   password: process.env.SPC_PASSWORD ?? "",
 };
 
-/** Slack webhook URL from environment */
+/** Slack webhook URL from environment (legacy, for one-way notifications) */
 export const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL ?? "";
+
+/** Slack Bot Token (xoxb-...) for @slack/bolt */
+export const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN ?? "";
+
+/** Slack App Token (xapp-...) for Socket Mode */
+export const SLACK_APP_TOKEN = process.env.SLACK_APP_TOKEN ?? "";
+
+/** Slack channel IDs (comma-separated) */
+export const SLACK_CHANNEL_IDS = (process.env.SLACK_CHANNEL_IDS ?? process.env.SLACK_CHANNEL_ID ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 /** Browser launch options for stealth */
 export const BROWSER_OPTIONS = {

@@ -9,7 +9,7 @@
  * The site at spc.esongpa.or.kr shows a monthly calendar where each
  * day cell (<td>) contains inline <li> elements with time slots.
  * Each <li> shows: time range + status (e.g., "08:00~10:00예약가능 (1/2)")
- * Available slots have <a> links with javascript:fn_rent_odchk1('slotId', 'date').
+ * Available slots have <a> links with javascript:fn_wait_rent_odchk1('slotId', 'date').
  *
  * This module:
  * - Navigates to each court's monthly calendar page
@@ -39,7 +39,7 @@ export interface TimeSlot {
   available: boolean;
   /** Available court count info, e.g. "(1/2)" */
   availableCourts: string;
-  /** Reservation slot ID from fn_rent_odchk1 call */
+  /** Reservation slot ID from fn_wait_rent_odchk1 call */
   slotId: string;
   /** Direct link to the calendar page for this month */
   reservationUrl: string;
@@ -196,7 +196,7 @@ export async function scrapeMonthlyCalendar(
               const link = li.querySelector("a");
               if (link) {
                 const href = link.getAttribute("href") ?? "";
-                const idMatch = href.match(/fn_rent_odchk1\s*\(\s*['"](\d+)['"]/);
+                const idMatch = href.match(/fn_(?:wait_)?rent_odchk1\s*\(\s*['"](\d+)['"]/);
                 if (idMatch) slotId = idMatch[1];
               }
             } else if (liText.includes("예약완료")) {

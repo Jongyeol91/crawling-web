@@ -6,3 +6,5 @@ storage-state.json
 *.log
 logs/
 .scraper.lock
+launchd/
+.omc/
