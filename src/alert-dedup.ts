@@ -21,8 +21,8 @@ import { logger } from "./logger.js";
 // Configuration
 // ---------------------------------------------------------------------------
 
-/** Default cooldown period in milliseconds (1 hour) */
-export const DEFAULT_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+/** Default cooldown period in milliseconds (24 hours) */
+export const DEFAULT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /** Path to the dedup state file */
 const STATE_FILE = path.resolve(process.cwd(), ".alert-dedup-state.json");

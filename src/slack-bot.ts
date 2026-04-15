@@ -401,20 +401,114 @@ app.event("app_mention", async ({ event, client }) => {
   const post = (opts: Record<string, unknown>) =>
     client.chat.postMessage({ ...opts, ...(threadTs ? { thread_ts: threadTs } : {}) } as any) as any;
 
-  if (!text || ["테니스", "조회", "현황"].includes(text)) {
-    // 단순 멘션 → 전체 현황
+  if (text === "폴링") {
+    // 수동 폴링 실행
+    await post({ channel: event.channel, text: "🔍 폴링 실행 중..." });
+    await runPolling();
+    await post({ channel: event.channel, text: "폴링 완료." });
+  } else if (!text || ["테니스", "조회", "현황"].includes(text)) {
     await runScrapeAndReport(post, event.channel, "command");
   } else {
-    // 텍스트 있으면 항상 예약 데이터 + LLM 분석
     await runScrapeWithLLM(post, event.channel, text);
   }
 });
 
 // ─── Polling: 10분 간격 빈자리 알림 ──────────────────────────────────────────
 
-const pollingThreadTs: Record<string, string> = {}; // 채널별 폴링 스레드 ts
-let pollingThreadDate = ""; // 날짜가 바뀌면 새 스레드 시작
+const pollingThreadTs: Record<string, string> = {};
+let pollingThreadDate = "";
 let pollingInProgress = false;
+
+async function runPolling(): Promise<void> {
+  if (pollingInProgress || scraping) {
+    logger.info("[Bot:Poll] Skipped (already running)");
+    return;
+  }
+
+  pollingInProgress = true;
+  let sm: SessionManager | undefined;
+
+  try {
+    logger.info("[Bot:Poll] Polling started");
+
+    const todayStr = new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
+    if (pollingThreadDate !== todayStr) {
+      for (const k of Object.keys(pollingThreadTs)) delete pollingThreadTs[k];
+      pollingThreadDate = todayStr;
+    }
+
+    sm = await createSessionManager();
+
+    const today = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })
+    );
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const includeNextMonth = daysInMonth - today.getDate() <= 7;
+
+    const results = await scrapeAllCourts(sm.page, { includeNextMonth });
+    await sm.persistSession();
+
+    const allAvailable = getAvailableSlots(results);
+    const targetSlots = filterAvailableTargetSlots(allAvailable);
+
+    const courtSlots: CourtSlot[] = targetSlots.map((s) => ({
+      courtCode: s.courtCode,
+      courtName: `${s.courtName} 테니스장`,
+      date: s.date,
+      time: s.time,
+      status: s.status,
+      available: s.available,
+      reservationUrl: s.reservationUrl,
+    }));
+
+    const newSlots = filterNewAlerts(courtSlots);
+    logger.info(`[Bot:Poll] Target: ${targetSlots.length}, New: ${newSlots.length}`);
+
+    if (newSlots.length > 0) {
+      const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
+      const lines = newSlots.map((s) => {
+        const [, m, d] = s.date.split("-");
+        const date = new Date(
+          parseInt(s.date.split("-")[0], 10),
+          parseInt(m!, 10) - 1,
+          parseInt(d!, 10)
+        );
+        const dayName = DAY_NAMES[date.getDay()] ?? "";
+        const shortDate = `${parseInt(m!, 10)}/${parseInt(d!, 10)}`;
+        const shortTime = s.time.replace(/:00/g, "");
+        const url = s.reservationUrl || `https://spc.esongpa.or.kr/page/rent/${s.courtCode}.od.list.php`;
+        return `*${shortDate}(${dayName})* ${s.courtName} \`${shortTime}\` <${url}|예약>`;
+      });
+
+      const text = `*새로운 빈 자리 발견!* (${newSlots.length}건)\n${lines.join("\n")}`;
+
+      for (const ch of SLACK_CHANNEL_IDS) {
+        const msgOpts: Record<string, unknown> = {
+          channel: ch,
+          text,
+          blocks: [{ type: "section", text: { type: "mrkdwn", text } }],
+        };
+        if (pollingThreadTs[ch]) msgOpts.thread_ts = pollingThreadTs[ch];
+
+        try {
+          const alertMsg = await app.client.chat.postMessage(msgOpts as any) as any;
+          if (!pollingThreadTs[ch] && alertMsg.ts) pollingThreadTs[ch] = alertMsg.ts;
+        } catch (err) {
+          logger.error(`[Bot:Poll] Failed to post to ${ch}: ${(err as any)?.data?.error ?? err}`);
+        }
+      }
+
+      markAsSent(newSlots);
+      logger.info(`[Bot:Poll] Alert sent for ${newSlots.length} slot(s)`);
+    }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logger.error(`[Bot:Poll] Error: ${errMsg}`);
+  } finally {
+    pollingInProgress = false;
+    if (sm) await sm.close();
+  }
+}
 
 function startPollingCron(): void {
   if (SLACK_CHANNEL_IDS.length === 0) {
@@ -422,116 +516,7 @@ function startPollingCron(): void {
     return;
   }
 
-  // 매 10분
-  cron.schedule(
-    "*/10 * * * *",
-    async () => {
-      if (pollingInProgress || scraping) {
-        logger.info("[Bot:Poll] Skipped (already running)");
-        return;
-      }
-
-      pollingInProgress = true;
-      let sm: SessionManager | undefined;
-
-      try {
-        logger.info("[Bot:Poll] Polling started");
-
-        // 날짜가 바뀌면 새 스레드 시작
-        const todayStr = new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
-        if (pollingThreadDate !== todayStr) {
-          for (const k of Object.keys(pollingThreadTs)) delete pollingThreadTs[k];
-          pollingThreadDate = todayStr;
-        }
-
-        sm = await createSessionManager();
-
-        const today = new Date(
-          new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })
-        );
-        const daysInMonth = new Date(
-          today.getFullYear(),
-          today.getMonth() + 1,
-          0
-        ).getDate();
-        const includeNextMonth = daysInMonth - today.getDate() <= 7;
-
-        const results = await scrapeAllCourts(sm.page, { includeNextMonth });
-        await sm.persistSession();
-
-        // Get available target slots (weekday 18+ and weekend)
-        const allAvailable = getAvailableSlots(results);
-        const targetSlots = filterAvailableTargetSlots(allAvailable);
-
-        // Convert to CourtSlot for dedup
-        const courtSlots: CourtSlot[] = targetSlots.map((s) => ({
-          courtCode: s.courtCode,
-          courtName: `${s.courtName} 테니스장`,
-          date: s.date,
-          time: s.time,
-          status: s.status,
-          available: s.available,
-          reservationUrl: s.reservationUrl,
-        }));
-
-        // Dedup
-        const newSlots = filterNewAlerts(courtSlots);
-        logger.info(`[Bot:Poll] Target: ${targetSlots.length}, New: ${newSlots.length}`);
-
-        if (newSlots.length > 0) {
-          // Format alert message
-          const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
-          const lines = newSlots.map((s) => {
-            const [, m, d] = s.date.split("-");
-            const date = new Date(
-              parseInt(s.date.split("-")[0], 10),
-              parseInt(m!, 10) - 1,
-              parseInt(d!, 10)
-            );
-            const dayName = DAY_NAMES[date.getDay()] ?? "";
-            const shortDate = `${parseInt(m!, 10)}/${parseInt(d!, 10)}`;
-            const shortTime = s.time.replace(/:00/g, "");
-            return `*${shortDate}(${dayName})* ${s.courtName} \`${shortTime}\``;
-          });
-
-          const text = `*새로운 빈 자리 발견!* (${newSlots.length}건)\n${lines.join("\n")}`;
-
-          for (const ch of SLACK_CHANNEL_IDS) {
-            const msgOpts: Record<string, unknown> = {
-              channel: ch,
-              text,
-              blocks: [
-                { type: "section", text: { type: "mrkdwn", text } },
-              ],
-            };
-
-            if (pollingThreadTs[ch]) {
-              msgOpts.thread_ts = pollingThreadTs[ch];
-            }
-
-            try {
-              const alertMsg = await app.client.chat.postMessage(msgOpts as any) as any;
-              if (!pollingThreadTs[ch] && alertMsg.ts) {
-                pollingThreadTs[ch] = alertMsg.ts;
-              }
-            } catch (err) {
-              logger.error(`[Bot:Poll] Failed to post to ${ch}: ${(err as any)?.data?.error ?? err}`);
-            }
-          }
-
-          markAsSent(newSlots);
-          logger.info(`[Bot:Poll] Alert sent for ${newSlots.length} slot(s)`);
-        }
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        logger.error(`[Bot:Poll] Error: ${errMsg}`);
-      } finally {
-        pollingInProgress = false;
-        if (sm) await sm.close();
-      }
-    },
-    { timezone: "Asia/Seoul" }
-  );
+  cron.schedule("*/10 * * * *", () => { runPolling(); }, { timezone: "Asia/Seoul" });
 
   logger.info("[Bot] Polling cron scheduled: every 10 minutes");
 }
@@ -565,7 +550,7 @@ async function main() {
   logger.info("Listening for:");
   logger.info('  - App mentions (@bot) — 전체 조회 또는 질문');
   if (SLACK_CHANNEL_IDS.length > 0) {
-    logger.info(`  - Polling every 10min → 빈자리 알림 (평일 18시+, 주말) → ${SLACK_CHANNEL_IDS.join(", ")}`);
+    logger.info(`  - Polling every 10min → 빈자리 알림 (24h 쿨다운) → ${SLACK_CHANNEL_IDS.join(", ")}`);
   }
 }
 
